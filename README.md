@@ -33,8 +33,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-      - name: Code Review
-        uses: review-raccoon/review-raccoon@v1
+      - name: Review Raccoon
+        uses: Deepak-png981/AI-Code-Reviewer-Release@v0.1.3
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
