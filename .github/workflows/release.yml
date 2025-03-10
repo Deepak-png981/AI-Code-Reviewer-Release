@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+branding:
+  icon: 'terminal'
+  color: 'gray-dark'
+
 jobs:
   release:
     runs-on: ubuntu-latest
