@@ -1,0 +1,37 @@
+name: Publish Action to Marketplace
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Check out the public repository.
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      # Read the version from the VERSION file.
+      - name: Get Version
+        id: get_version
+        run: |
+          if [ -f VERSION ]; then
+            version=$(cat VERSION)
+          else
+            # Fallback in case VERSION is missing.
+            version=$(date +'%Y.%m.%d.%H%M%S')
+          fi
+          echo "Version: $version"
+          echo "::set-output name=version::$version"
+
+      # Create (or update) a GitHub release for this version.
+      - name: Create GitHub Release
+        run: |
+          gh release create "v${{ steps.get_version.outputs.version }}" \
+            --title "Release v${{ steps.get_version.outputs.version }}" \
+            --notes "Automated release for version ${{ steps.get_version.outputs.version }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
