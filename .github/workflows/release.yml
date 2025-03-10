@@ -10,28 +10,39 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Check out the public repository.
-      - name: Checkout Repository
+      # Step 1: Check out the public repo code (including dist/).
+      - name: Checkout
         uses: actions/checkout@v3
 
-      # Read the version from the VERSION file.
-      - name: Get Version
+      # Step 2: Read the version from dist/VERSION.
+      - name: Read Version
         id: get_version
         run: |
-          if [ -f VERSION ]; then
-            version=$(cat VERSION)
+          # We'll store the version in an output variable for the next step
+          if [ -f dist/VERSION ]; then
+            version=$(cat dist/VERSION)
           else
-            # Fallback in case VERSION is missing.
-            version=$(date +'%Y.%m.%d.%H%M%S')
+            echo "No VERSION file found in dist/. Using fallback."
+            version="0.0.0-$(date +'%Y%m%d%H%M%S')"
           fi
-          echo "Version: $version"
+          echo "Version read: $version"
           echo "::set-output name=version::$version"
 
-      # Create (or update) a GitHub release for this version.
+      # Step 3: Create or update the release using the GitHub CLI
+      # This automatically tags your repo with v{version}, e.g., v1.2.3
       - name: Create GitHub Release
         run: |
-          gh release create "v${{ steps.get_version.outputs.version }}" \
-            --title "Release v${{ steps.get_version.outputs.version }}" \
-            --notes "Automated release for version ${{ steps.get_version.outputs.version }}"
+          # Prepend 'v' to ensure it's recognized as a valid semver tag for Actions
+          release_tag="v${{ steps.get_version.outputs.version }}"
+          echo "Creating release for tag: $release_tag"
+
+          # If this tag already exists, 'gh release create' will fail.
+          # One workaround is to delete the old tag or skip creation if it already exists.
+          # For simplicity, we'll attempt to create a new release each time:
+          gh release create "$release_tag" \
+            --title "Release $release_tag" \
+            --notes "Automated release for version $release_tag" \
+            --latest
         env:
+          # GITHUB_TOKEN is automatically provided with enough permissions
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
