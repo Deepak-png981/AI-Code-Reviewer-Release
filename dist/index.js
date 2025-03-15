@@ -492,6 +492,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.DiffUtils = void 0;
 const parse_diff_1 = __importDefault(__nccwpck_require__(4833));
 const minimatch_1 = __importDefault(__nccwpck_require__(2002));
+const prompts_1 = __nccwpck_require__(1646);
 class DiffUtils {
     static parseDiff(diff) {
         return (0, parse_diff_1.default)(diff);
@@ -502,43 +503,17 @@ class DiffUtils {
         });
     }
     static createPrompt(file, chunk, prDetails) {
-        return `Your task is to review pull requests. Instructions:
-- Provide the response in following JSON format:  {"reviews": [{"lineNumber":  <line_number>, "reviewComment": "<review comment>"}]}
-- Do not give positive comments or compliments.
-- Provide comments and suggestions ONLY if there is something to improve, otherwise "reviews" should be an empty array.
-- Write the comment in GitHub Markdown format.
-- Use the given description only for the overall context and only comment the code.
-- IMPORTANT: NEVER suggest adding comments to the code.
-- IMPORTANT: Focus on code content, not formatting or adding comments.
-- NOTE: Classify comments as "nit", "minor", or "major". Start each comment with the appropriate label.
-
-Review the following code diff in the file "${file.to}" and take the pull request title and description into account when writing the response.
-  
-Pull request title: ${prDetails.title}
-Pull request description:
-
----
-${prDetails.description}
----
-
-Git diff to review:
-
-\`\`\`diff
-${chunk.content}
-${chunk.changes
-            // @ts-expect-error - ln and ln2 exists where needed
-            .map((c) => `${c.ln ? c.ln : c.ln2} ${c.content}`)
-            .join("\n")}
-\`\`\`
-`;
+        return (0, prompts_1.createCodeReviewPrompt)(file, chunk, prDetails);
     }
     static createReviewComments(file, chunk, aiResponses) {
         return aiResponses.flatMap((aiResponse) => {
             if (!file.to) {
                 return [];
             }
+            const body = aiResponse.suggestion
+                ? `${aiResponse.reviewComment}\n\n\`\`\`suggestion\n${aiResponse.suggestion}\n\`\`\`` : aiResponse.reviewComment;
             return {
-                body: aiResponse.reviewComment,
+                body: body,
                 path: file.to,
                 line: Number(aiResponse.lineNumber),
             };
@@ -546,6 +521,77 @@ ${chunk.changes
     }
 }
 exports.DiffUtils = DiffUtils;
+
+
+/***/ }),
+
+/***/ 1646:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.createCodeReviewPrompt = void 0;
+function createCodeReviewPrompt(file, chunk, prDetails) {
+    return `
+# Code Review Task
+
+## Response Format
+Provide your response in the following **JSON** format:
+
+\`\`\`json
+{
+  "reviews": [
+    {
+      "lineNumber": <line_number>,
+      "reviewComment": "<review comment>",
+      "suggestion": "<suggested code snippet>" // Optional; only include this if you have specific code changes to propose
+    }
+  ]
+}
+\`\`\`
+
+- **Important**: 
+  - If you have a suggestion, the \`suggestion\` field **must only contain the replacement changes**—no extra commentary or markdown.
+  - Put any explanations, rationale, or severity labels in the \`reviewComment\` field.
+
+## Review Guidelines
+- Do **not** give positive comments or compliments.
+- Provide comments and suggestions **only** if there is something to improve; otherwise, return \`{"reviews": []}\`.
+- Write the comment in GitHub Markdown format.
+- Use the pull request description only for context; focus your review on the code changes.
+- Classify each comment with one of these severity levels:
+  - **nit**: Minor stylistic issues that don't affect functionality.
+  - **minor**: Small issues that should be fixed but don't impact overall functionality.
+  - **major**: Significant problems that could cause bugs, performance issues, or security vulnerabilities.
+- Start each comment with the appropriate severity label, e.g., "**[major]** This could cause..."
+
+## Important Rules
+- **Never** suggest adding comments to the code.
+- Focus on code content, logic, and potential bugs—**not** formatting or documentation.
+- When providing a suggestion, include **only** the exact code snippet to replace the problematic code.
+- Keep suggestions concise and directly applicable.
+
+## Pull Request Information
+- **File**: \`${file.to}\`
+- **Title**: \`${prDetails.title}\`
+
+**Description**:
+\`\`\`
+${prDetails.description}
+\`\`\`
+
+## Git Diff to Review
+\`\`\`diff
+${chunk.content}
+${chunk.changes
+        // @ts-expect-error - ln and ln2 exist where needed
+        .map((c) => `${c.ln ? c.ln : c.ln2} ${c.content}`)
+        .join("\n")}
+\`\`\`
+`;
+}
+exports.createCodeReviewPrompt = createCodeReviewPrompt;
 
 
 /***/ }),
