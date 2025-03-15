@@ -17,7 +17,7 @@ A GitHub Action that automatically performs code reviews on pull requests using 
 
 ### Usage
 
-Add the following to your GitHub workflow file (e.g., `.github/workflows/review-    raccoon.yml`):
+Add the following to your GitHub workflow file (e.g., `.github/workflows/review-raccoon.yml`):
 
 ```yaml
 name: Code Review with OpenAI
