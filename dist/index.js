@@ -40,6 +40,14 @@ class Config {
         this.OPENAI_API_KEY = this.getRequiredParam("OPENAI_API_KEY");
         this.OPENAI_API_MODEL = this.getParamWithDefault("OPENAI_API_MODEL", "gpt-3.5-turbo", "No OPENAI_API_MODEL provided, using default model");
         this.EXCLUDE_PATTERNS = this.getArrayParam("exclude");
+        this.UPDATE_PR_DESCRIPTION = this.getBooleanParam("PR_DESCRIPTION", false);
+    }
+    getBooleanParam(name, defaultValue) {
+        const value = core.getInput(name);
+        if (!value || value.trim() === "") {
+            return defaultValue;
+        }
+        return value.toLowerCase() === "true";
     }
     getRequiredParam(name) {
         const value = core.getInput(name);
@@ -82,6 +90,29 @@ exports.Config = Config;
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -93,6 +124,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.PRReviewHandler = void 0;
+const core = __importStar(__nccwpck_require__(2186));
 const fs_1 = __nccwpck_require__(7147);
 const config_1 = __nccwpck_require__(6730);
 const GitHubService_1 = __nccwpck_require__(399);
@@ -116,6 +148,7 @@ class PRReviewHandler {
                     this.errorHandler.handleError("No diff found for the current PR event. Unable to proceed with code review.", types_1.ErrorSeverity.WARNING);
                     return;
                 }
+                yield this.updatePRDescription(prDetails);
                 const parsedDiff = diffUtils_1.DiffUtils.parseDiff(diff);
                 const filteredDiff = diffUtils_1.DiffUtils.filterDiff(parsedDiff, this.config.EXCLUDE_PATTERNS);
                 const comments = yield this.analyzeCode(filteredDiff, prDetails);
@@ -158,7 +191,12 @@ class PRReviewHandler {
                     const aiResponses = yield this.aiService.getReviewComments(prompt);
                     if (aiResponses) {
                         const newComments = diffUtils_1.DiffUtils.createReviewComments(file, chunk, aiResponses);
-                        comments.push(...newComments);
+                        const validComments = newComments.filter(comment => {
+                            const chunkStart = chunk.oldStart;
+                            const chunkEnd = chunkStart + chunk.oldLines;
+                            return comment.line >= chunkStart && comment.line <= chunkEnd;
+                        });
+                        comments.push(...validComments);
                     }
                 }
             }
@@ -167,6 +205,76 @@ class PRReviewHandler {
     }
     static isDeletedFile(file) {
         return file.to === PRReviewHandler.DELETED_FILE_PATH;
+    }
+    updatePRDescription(prDetails) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.config.UPDATE_PR_DESCRIPTION) {
+                return;
+            }
+            const currentDescription = prDetails.description || "";
+            const markerToCheckIfDescriptionIsUpdatedAlready = "<!-- PR-CHANGES-SUMMARY-START -->";
+            if (currentDescription.includes(markerToCheckIfDescriptionIsUpdatedAlready)) {
+                core.info("PR description has already been updated. Skipping update.");
+                return;
+            }
+            try {
+                const changedFiles = yield this.gitHubService.getChangedFiles(prDetails.owner, prDetails.repo, prDetails.pull_number);
+                core.info(`changedFiles : ${JSON.stringify(changedFiles)}`);
+                const changesSummary = this.generateChangesSummary(changedFiles);
+                const markedSummary = `${markerToCheckIfDescriptionIsUpdatedAlready}\n${changesSummary}`;
+                const newDescription = currentDescription
+                    ? `${currentDescription}\n\n${markedSummary}`
+                    : markedSummary;
+                yield this.gitHubService.updatePRDescription(prDetails.owner, prDetails.repo, prDetails.pull_number, newDescription);
+                core.info("Successfully updated PR description with changes summary.");
+            }
+            catch (error) {
+                this.errorHandler.handleError("Failed to update PR description", types_1.ErrorSeverity.WARNING, error);
+            }
+        });
+    }
+    generateChangesSummary(changedFiles) {
+        let summary = `## PR Changes Summary\n\n`;
+        // Count files by type
+        const fileTypes = {};
+        const filesByStatus = {
+            added: 0,
+            modified: 0,
+            removed: 0,
+            renamed: 0,
+        };
+        changedFiles.forEach(file => {
+            // Count by file extension
+            const extension = file.filename.split('.').pop() || 'unknown';
+            fileTypes[extension] = (fileTypes[extension] || 0) + 1;
+            // Count by status
+            filesByStatus[file.status] = (filesByStatus[file.status] || 0) + 1;
+        });
+        // Add files changed section
+        summary += `### Files Changed\n\n`;
+        summary += `Total: ${changedFiles.length} files\n\n`;
+        // Add status breakdown
+        summary += `**Changes by status:**\n`;
+        for (const [status, count] of Object.entries(filesByStatus)) {
+            if (count > 0) {
+                summary += `- ${status}: ${count} files\n`;
+            }
+        }
+        summary += `\n`;
+        // Add file type breakdown
+        summary += `**Changes by file type:**\n`;
+        for (const [type, count] of Object.entries(fileTypes)) {
+            summary += `- .${type}: ${count} files\n`;
+        }
+        summary += `\n`;
+        // Add list of changed files
+        summary += `### Changed Files List\n\n`;
+        changedFiles.forEach(file => {
+            const changes = file.additions + file.deletions;
+            summary += `- ${file.filename} (${file.status}, +${file.additions}/-${file.deletions}, ${changes} changes)\n`;
+        });
+        summary += `\n*This summary was automatically generated on ${new Date().toISOString()}*\n`;
+        return summary;
     }
 }
 PRReviewHandler.DELETED_FILE_PATH = "/dev/null";
@@ -455,6 +563,27 @@ class GitHubService {
                 comments,
                 event: "COMMENT",
             });
+        });
+    }
+    updatePRDescription(owner, repo, pull_number, description) {
+        return __awaiter(this, void 0, void 0, function* () {
+            yield this.octokit.pulls.update({
+                owner,
+                repo,
+                pull_number,
+                body: description,
+            });
+        });
+    }
+    getChangedFiles(owner, repo, pull_number) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const response = yield this.octokit.pulls.listFiles({
+                owner,
+                repo,
+                pull_number,
+                per_page: 20
+            });
+            return response.data;
         });
     }
 }
