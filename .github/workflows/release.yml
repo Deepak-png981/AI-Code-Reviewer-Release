@@ -28,21 +28,25 @@ jobs:
           echo "Version read: $version"
           echo "::set-output name=version::$version"
 
-      # Step 3: Create or update the release using the GitHub CLI
-      # This automatically tags your repo with v{version}, e.g., v1.2.3
+      # Step 3: Create or update the release using the GitHub CLI.
+      # This automatically tags your repo with v{version}, e.g., v1.2.3, and marks it as the latest release.
       - name: Create GitHub Release
         run: |
           # Prepend 'v' to ensure it's recognized as a valid semver tag for Actions
           release_tag="v${{ steps.get_version.outputs.version }}"
           echo "Creating release for tag: $release_tag"
 
-          # If this tag already exists, 'gh release create' will fail.
-          # One workaround is to delete the old tag or skip creation if it already exists.
-          # For simplicity, we'll attempt to create a new release each time:
           gh release create "$release_tag" \
             --title "Release $release_tag" \
             --notes "Automated release for version $release_tag" \
             --latest
         env:
-          # GITHUB_TOKEN is automatically provided with enough permissions
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 4: Update the 'latest' tag to point to this commit.
+      - name: Update Latest Tag
+        run: |
+          git tag -f latest $GITHUB_SHA
+          git push origin -f latest
+        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
