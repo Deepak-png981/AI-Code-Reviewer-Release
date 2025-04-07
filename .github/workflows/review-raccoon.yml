@@ -1,0 +1,24 @@
+name: Review Raccoon
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+
+permissions: write-all
+
+jobs:
+  code_review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Review Raccoon
+        uses: Deepak-png981/AI-Code-Reviewer-Release@latest
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_MODEL: "gpt-4-1106-preview"
+          exclude: "yarn.lock,dist/**"
+          USER: "7b89ebbf-e564-4906-b3ab-b14edd40d3e0"
